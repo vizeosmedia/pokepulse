@@ -1,0 +1,1445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PokéPulse — Card Price Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #181c23;
+    --border: #1e2330;
+    --accent: #f6c90e;
+    --accent2: #e85d04;
+    --green: #39d353;
+    --red: #f85149;
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --card-glow: rgba(246,201,14,0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Syne', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.4;
+  }
+
+  /* Grid bg */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: 
+      linear-gradient(rgba(246,201,14,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(246,201,14,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* HEADER */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 20px 0;
+    position: sticky;
+    top: 0;
+    background: rgba(10,12,16,0.92);
+    backdrop-filter: blur(12px);
+    z-index: 100;
+  }
+
+  .header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    box-shadow: 0 0 20px rgba(246,201,14,0.4);
+  }
+
+  .logo h1 {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  .logo h1 span { color: var(--accent); }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .api-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .api-badge:hover { border-color: var(--accent); color: var(--accent); }
+
+  .api-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--red);
+    transition: background 0.3s;
+  }
+
+  .api-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+  .refresh-btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .refresh-btn:hover { background: #ffe033; transform: translateY(-1px); }
+  .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  /* NAV TABS */
+  .nav-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 20px 0 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* MAIN CONTENT */
+  main { padding: 32px 0 60px; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* SECTION HEADER */
+  .section-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    gap: 16px;
+  }
+
+  .section-title {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -1px;
+  }
+
+  .section-title .highlight { color: var(--accent); }
+
+  .section-sub {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 4px;
+    font-weight: 400;
+  }
+
+  .last-updated {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* FILTER ROW */
+  .filter-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  .filter-btn {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: 'Syne', sans-serif;
+  }
+
+  .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .filter-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  /* CARDS GRID */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+  }
+
+  .card-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    transition: all 0.25s;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    animation: fadeUp 0.4s ease both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .card-item::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--card-glow);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .card-item:hover { border-color: rgba(246,201,14,0.3); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+  .card-item:hover::before { opacity: 1; }
+
+  .rank-badge {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .card-img-wrap {
+    width: 54px;
+    height: 75px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--surface2);
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+  }
+
+  .card-img-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .card-meta { flex: 1; min-width: 0; }
+
+  .card-name {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .card-set {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 400;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .card-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .psa-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(246,201,14,0.1);
+    border: 1px solid rgba(246,201,14,0.2);
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+
+  .card-prices {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  .price-now {
+    font-size: 22px;
+    font-weight: 800;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: -1px;
+  }
+
+  .price-was {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 2px;
+  }
+
+  .change-pill {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 15px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .change-pill.up { background: rgba(57,211,83,0.1); color: var(--green); border: 1px solid rgba(57,211,83,0.2); }
+  .change-pill.down { background: rgba(248,81,73,0.1); color: var(--red); border: 1px solid rgba(248,81,73,0.2); }
+
+  .sparkline-bar {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 24px;
+    margin-top: 12px;
+  }
+
+  .bar-segment {
+    flex: 1;
+    background: var(--border);
+    border-radius: 2px;
+    min-height: 3px;
+    transition: background 0.3s;
+  }
+
+  .bar-segment.highlight { background: var(--green); }
+  .bar-segment.highlight.down { background: var(--red); }
+
+  /* SEARCH VIEW */
+  .search-bar-wrap {
+    position: relative;
+    margin-bottom: 24px;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    font-size: 18px;
+    pointer-events: none;
+  }
+
+  .search-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px 14px 46px;
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    outline: none;
+    transition: all 0.2s;
+  }
+
+  .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(246,201,14,0.08); }
+  .search-input::placeholder { color: var(--muted); }
+
+  .search-results-info {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 16px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* DETAIL PANEL */
+  .detail-panel {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    margin-bottom: 24px;
+    animation: fadeUp 0.3s ease;
+  }
+
+  .detail-panel.open { display: block; }
+
+  .detail-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 24px;
+    margin-bottom: 28px;
+  }
+
+  .detail-img {
+    width: 100px;
+    height: 140px;
+    border-radius: 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .detail-img img { width: 100%; height: 100%; object-fit: cover; }
+
+  .detail-meta { flex: 1; }
+
+  .detail-name { font-size: 24px; font-weight: 800; margin-bottom: 4px; letter-spacing: -0.5px; }
+  .detail-set { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
+
+  .detail-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .tag {
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .stat-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+  }
+
+  .stat-label { font-size: 10px; color: var(--muted); font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+  .stat-val { font-size: 20px; font-weight: 800; font-family: 'JetBrains Mono', monospace; letter-spacing: -0.5px; }
+
+  .close-detail {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-family: 'Syne', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+
+  .close-detail:hover { border-color: var(--red); color: var(--red); }
+
+  /* API KEY MODAL */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    backdrop-filter: blur(8px);
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .modal-overlay.hidden { display: none; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 36px;
+    max-width: 480px;
+    width: 100%;
+    animation: scaleIn 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  }
+
+  @keyframes scaleIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  .modal-logo {
+    font-size: 40px;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+
+  .modal h2 {
+    font-size: 22px;
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+
+  .modal p {
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.6;
+    margin-bottom: 24px;
+  }
+
+  .modal p a { color: var(--accent); text-decoration: none; }
+  .modal p a:hover { text-decoration: underline; }
+
+  .modal-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    margin-bottom: 12px;
+    transition: all 0.2s;
+  }
+
+  .modal-input:focus { border-color: var(--accent); }
+  .modal-input::placeholder { color: var(--muted); }
+
+  .modal-submit {
+    width: 100%;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    padding: 13px;
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 14px;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    transition: all 0.2s;
+    margin-bottom: 10px;
+  }
+
+  .modal-submit:hover { background: #ffe033; }
+
+  .modal-demo-btn {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 11px;
+    font-family: 'Syne', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .modal-demo-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .modal-note {
+    margin-top: 14px;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  /* EMPTY / LOADING STATES */
+  .loading-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+  }
+
+  .skeleton-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    animation: pulse 1.5s ease infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .skel { background: var(--border); border-radius: 4px; }
+
+  .empty-state {
+    text-align: center;
+    padding: 80px 20px;
+    color: var(--muted);
+  }
+
+  .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+  .empty-state h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+  .empty-state p { font-size: 13px; line-height: 1.6; }
+
+  .error-banner {
+    background: rgba(248,81,73,0.08);
+    border: 1px solid rgba(248,81,73,0.2);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    color: var(--red);
+    display: none;
+  }
+
+  .error-banner.show { display: block; }
+
+  /* FOOTER */
+  .footer-strip {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-top: 1px solid var(--border);
+    background: rgba(10,12,16,0.95);
+    padding: 8px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    z-index: 50;
+  }
+
+  .footer-strip span { display: flex; align-items: center; gap: 6px; }
+
+  /* Spinning loader */
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; display: inline-block; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .cards-grid, .loading-grid { grid-template-columns: 1fr; }
+    .section-header { flex-direction: column; align-items: flex-start; }
+    .detail-header { flex-direction: column; }
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- API KEY MODAL -->
+<div class="modal-overlay" id="apiModal">
+  <div class="modal">
+    <div class="modal-logo">⚡</div>
+    <h2>Connect to PokeData</h2>
+    <p>Enter your <a href="https://www.pokedata.io/pro" target="_blank">PokeData.io API key</a> to track real-time PSA 10 prices and the biggest movers of the last 24 hours.</p>
+    <input class="modal-input" id="apiKeyInput" type="password" placeholder="pd_live_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" />
+    <button class="modal-submit" onclick="connectApi()">Connect & Load Data</button>
+    <button class="modal-demo-btn" onclick="loadDemoMode()">🎮 Try Demo Mode (Mock Data)</button>
+    <div class="modal-note">Your key is stored locally in your browser and never sent to any third party.</div>
+  </div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="container">
+    <div class="header-inner">
+      <div class="logo">
+        <div class="logo-icon">⚡</div>
+        <h1>Poké<span>Pulse</span></h1>
+      </div>
+      <div class="header-right">
+        <div class="api-badge" onclick="showApiModal()" title="Click to change API key">
+          <div class="api-dot" id="apiDot"></div>
+          <span id="apiStatus">No Key</span>
+        </div>
+        <button class="refresh-btn" id="refreshBtn" onclick="loadMovers()" disabled>
+          <span id="refreshIcon">↻</span> Refresh
+        </button>
+      </div>
+    </div>
+    <div class="nav-tabs">
+      <div class="tab active" onclick="switchTab('movers')">📈 Top Movers</div>
+      <div class="tab" onclick="switchTab('search')">🔍 Card Search</div>
+      <div class="tab" onclick="switchTab('diag')">🛠 Diagnostics</div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+
+    <!-- TOP MOVERS VIEW -->
+    <div class="view active" id="view-movers">
+      <div class="section-header">
+        <div>
+          <div class="section-title">24h <span class="highlight">Top Movers</span></div>
+          <div class="section-sub">PSA 10 graded — ranked by % price change</div>
+        </div>
+        <div class="last-updated" id="lastUpdated">—</div>
+      </div>
+
+      <div class="filter-row">
+        <button class="filter-btn active" onclick="filterMovers('gainers', this)">🚀 Gainers</button>
+        <button class="filter-btn" onclick="filterMovers('losers', this)">📉 Losers</button>
+        <button class="filter-btn" onclick="filterMovers('all', this)">All</button>
+      </div>
+
+      <div class="error-banner" id="errorBanner"></div>
+
+      <div id="moversContainer">
+        <div class="empty-state">
+          <div class="icon">🔑</div>
+          <h3>Connect to get started</h3>
+          <p>Enter your PokeData.io API key or try demo mode to see live PSA 10 price movers.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEARCH VIEW -->
+    <div class="view" id="view-search">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Card <span class="highlight">Search</span></div>
+          <div class="section-sub">Look up any Pokémon card — PSA 10 pricing</div>
+        </div>
+      </div>
+
+      <div class="search-bar-wrap">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" id="searchInput" type="text" placeholder="Search by card name, set, or number…" oninput="onSearchInput()" />
+      </div>
+
+      <div class="detail-panel" id="detailPanel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+          <span style="font-size:13px;color:var(--muted);font-weight:600;">CARD DETAIL</span>
+          <button class="close-detail" onclick="closeDetail()">✕ Close</button>
+        </div>
+        <div id="detailContent"></div>
+      </div>
+
+      <div class="error-banner" id="searchErrorBanner"></div>
+      <div class="search-results-info" id="searchResultsInfo"></div>
+      <div id="searchContainer"></div>
+    </div>
+
+    <!-- DIAGNOSTICS VIEW -->
+    <div class="view" id="view-diag">
+      <div class="section-header">
+        <div>
+          <div class="section-title">API <span class="highlight">Diagnostics</span></div>
+          <div class="section-sub">Probe all known endpoints with your key to find what works</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+        <button class="refresh-btn" onclick="runDiagnostics()" style="flex:1;min-width:160px;justify-content:center;">&#9654; Run Diagnostics</button>
+        <button style="flex:1;min-width:160px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:7px 14px;font-family:'Syne',sans-serif;font-weight:600;font-size:12px;cursor:pointer;" onclick="loadDemoMode();switchTabById('movers')">&#127918; Use Demo Mode Instead</button>
+      </div>
+      <div id="diagOutput" style="font-family:'JetBrains Mono',monospace;font-size:12px;line-height:2;color:var(--muted);">
+        Click "Run Diagnostics" to probe all known PokeData.io endpoints.
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- FOOTER -->
+<div class="footer-strip">
+  <span>⚡ PokéPulse</span>
+  <span id="footerStatus">Waiting for API key…</span>
+</div>
+
+<script>
+/* ===========================
+   STATE
+=========================== */
+let API_KEY = '';
+let IS_DEMO = false;
+let allMovers = [];
+let currentFilter = 'gainers';
+let searchDebounce = null;
+
+/* ===========================
+   MODAL
+=========================== */
+function showApiModal() {
+  document.getElementById('apiModal').classList.remove('hidden');
+}
+
+function connectApi() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key) { alert('Please enter an API key.'); return; }
+  API_KEY = key;
+  IS_DEMO = false;
+  localStorage.setItem('pd_key', key);
+  document.getElementById('apiModal').classList.add('hidden');
+  setConnected(true);
+  loadMovers();
+}
+
+function loadDemoMode() {
+  IS_DEMO = true;
+  API_KEY = 'DEMO';
+  document.getElementById('apiModal').classList.add('hidden');
+  setConnected(true);
+  loadMovers();
+}
+
+function setConnected(val) {
+  const dot = document.getElementById('apiDot');
+  const status = document.getElementById('apiStatus');
+  const btn = document.getElementById('refreshBtn');
+  if (val) {
+    dot.classList.add('connected');
+    status.textContent = IS_DEMO ? 'Demo Mode' : 'Connected';
+    btn.disabled = false;
+  } else {
+    dot.classList.remove('connected');
+    status.textContent = 'No Key';
+    btn.disabled = true;
+  }
+}
+
+/* ===========================
+   TABS
+=========================== */
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('view-' + name).classList.add('active');
+}
+
+function switchTabById(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const tabs = document.querySelectorAll('.tab');
+  const names = ['movers','search','diag'];
+  const idx = names.indexOf(name);
+  if (tabs[idx]) tabs[idx].classList.add('active');
+  document.getElementById('view-' + name).classList.add('active');
+}
+
+/* ===========================
+   DIAGNOSTICS
+=========================== */
+async function runDiagnostics() {
+  const out = document.getElementById('diagOutput');
+  if (!API_KEY || API_KEY === 'DEMO') {
+    out.innerHTML = '<span style="color:var(--red)">No API key set. Enter your key first (click the badge in the header).</span>';
+    return;
+  }
+
+  const log = (msg, color = 'var(--muted)') => {
+    out.innerHTML += `<div style="color:${color}">${msg}</div>`;
+  };
+
+  out.innerHTML = '';
+  log('Starting diagnostics…', 'var(--text)');
+  log('');
+
+  // Decode JWT
+  try {
+    const payload = JSON.parse(atob(API_KEY.split('.')[1]));
+    const iat = new Date(payload.iat * 1000);
+    log(`&#9989; JWT valid — issued: ${iat.toLocaleString()}, type: ${payload.token_type}`, 'var(--green)');
+    log(`   sub: ${payload.sub}`);
+  } catch(e) {
+    log(`&#9888; Could not decode JWT: ${e.message}`, 'var(--accent)');
+  }
+
+  log('');
+  log('Probing endpoints…', 'var(--text)');
+
+  const endpoints = [
+    ['https://www.pokedata.io/api/v1', '/cards?limit=1'],
+    ['https://www.pokedata.io/api/v1', '/card/search?q=pikachu&limit=1'],
+    ['https://www.pokedata.io/api/v1', '/cards/search?q=pikachu&limit=1'],
+    ['https://www.pokedata.io/api/v1', '/cards/movers?limit=5'],
+    ['https://www.pokedata.io/api/v1', '/market/movers?limit=5'],
+    ['https://api.pokedata.io/v1', '/cards?limit=1'],
+    ['https://api.pokedata.io/v1', '/cards/search?q=pikachu&limit=1'],
+    ['https://www.pokedata.io/api/v2', '/cards?limit=1'],
+    ['https://www.pokedata.io/api/v2', '/cards/search?q=pikachu&limit=1'],
+  ];
+
+  let anyWorked = false;
+  for (const [base, path] of endpoints) {
+    const url = base + path;
+    try {
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${API_KEY}`, 'Accept': 'application/json' }
+      });
+      const body = await res.text();
+      let preview = body.slice(0, 120).replace(/</g,'&lt;');
+      if (res.ok) {
+        anyWorked = true;
+        log(`&#9989; ${res.status} ${url}`, 'var(--green)');
+        log(`   Response: ${preview}…`);
+      } else if (res.status === 401) {
+        log(`&#128274; 401 UNAUTHORIZED — ${url}`, 'var(--red)');
+        log(`   ${preview}`);
+      } else if (res.status === 403) {
+        log(`&#128274; 403 FORBIDDEN — ${url} (key may lack permissions)`, 'var(--red)');
+      } else if (res.status === 404) {
+        log(`&#9888; 404 Not Found — ${url}`, 'var(--accent)');
+      } else {
+        log(`&#128308; ${res.status} — ${url}`, 'var(--muted)');
+        log(`   ${preview}`);
+      }
+    } catch(e) {
+      if (e.message.includes('NetworkError') || e.message.includes('Failed to fetch') || e.message.includes('CORS')) {
+        log(`&#128562; CORS/Network — ${url}`, 'var(--red)');
+        log(`   ${e.message}`);
+      } else {
+        log(`&#10060; Error — ${url}: ${e.message}`, 'var(--red)');
+      }
+    }
+  }
+
+  log('');
+  if (anyWorked) {
+    log('&#127881; At least one endpoint responded successfully! Switch to Top Movers tab.', 'var(--green)');
+    WORKING_BASE = null; // reset so loadMovers re-discovers
+  } else {
+    log('&#9888; No endpoints responded successfully.', 'var(--accent)');
+    log('Common causes:', 'var(--text)');
+    log('  1. CORS — open this file from a web server, not file:// (try: npx serve .)');
+    log('  2. API key expired or wrong subscription tier');
+    log('  3. PokeData.io API may use a different base URL — check your welcome email');
+    log('  4. Rate limited — wait a minute and try again');
+  }
+}
+
+/* ===========================
+   API HELPERS
+=========================== */
+// Known PokeData.io endpoint candidates (JWT token_type=api confirms this is their API)
+// The base URL and endpoint patterns discovered from their Postman docs
+const BASE_URLS = [
+  'https://www.pokedata.io/api/v1',
+  'https://api.pokedata.io/v1',
+  'https://www.pokedata.io/api',
+];
+
+let WORKING_BASE = null;
+
+async function apiGet(path, base = null) {
+  const url = (base || WORKING_BASE || BASE_URLS[0]) + path;
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${API_KEY}`,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    }
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status} ${res.statusText}${body ? ': ' + body.slice(0,200) : ''}`);
+  }
+  return res.json();
+}
+
+async function discoverBase() {
+  // Try each base URL with a lightweight endpoint
+  const probes = [
+    { base: 'https://www.pokedata.io/api/v1', path: '/cards?limit=1' },
+    { base: 'https://www.pokedata.io/api/v1', path: '/card/search?q=pikachu&limit=1' },
+    { base: 'https://api.pokedata.io/v1', path: '/cards?limit=1' },
+    { base: 'https://www.pokedata.io/api', path: '/v1/cards?limit=1' },
+  ];
+  for (const p of probes) {
+    try {
+      const res = await fetch(p.base + p.path, {
+        headers: { 'Authorization': `Bearer ${API_KEY}`, 'Accept': 'application/json' }
+      });
+      if (res.status < 500) { // Even 401/404 means we hit the server
+        WORKING_BASE = p.base;
+        return { base: p.base, path: p.path, status: res.status };
+      }
+    } catch(e) { /* try next */ }
+  }
+  return null;
+}
+
+/* ===========================
+   DEMO DATA
+=========================== */
+function getDemoMovers() {
+  const cards = [
+    { id: 1, name: 'Charizard', set: 'Base Set (Shadowless)', number: '4/102', psa10_now: 8200, psa10_prev: 6100, img: null },
+    { id: 2, name: 'Pikachu Illustrator', set: 'CoroCoro', number: 'Promo', psa10_now: 6250000, psa10_prev: 5900000, img: null },
+    { id: 3, name: 'Blastoise', set: 'Base Set', number: '2/102', psa10_now: 4300, psa10_prev: 3500, img: null },
+    { id: 4, name: 'Mewtwo', set: 'Base Set', number: '10/102', psa10_now: 2100, psa10_prev: 1750, img: null },
+    { id: 5, name: 'Rayquaza Gold Star', set: 'EX Deoxys', number: '107/107', psa10_now: 18500, psa10_prev: 14200, img: null },
+    { id: 6, name: 'Umbreon Gold Star', set: 'POP Series 5', number: '17/17', psa10_now: 22000, psa10_prev: 17500, img: null },
+    { id: 7, name: 'Lugia', set: 'Neo Genesis', number: '9/111', psa10_now: 3800, psa10_prev: 4200, img: null },
+    { id: 8, name: 'Crystal Charizard', set: 'Skyridge', number: '146/144', psa10_now: 14000, psa10_prev: 15800, img: null },
+    { id: 9, name: 'Shining Charizard', set: 'Neo Destiny', number: '107/105', psa10_now: 5100, psa10_prev: 5600, img: null },
+    { id: 10, name: 'Espeon Gold Star', set: 'POP Series 5', number: '16/17', psa10_now: 14200, psa10_prev: 10500, img: null },
+    { id: 11, name: 'Ancient Mew', set: 'Promo', number: 'N/A', psa10_now: 320, psa10_prev: 280, img: null },
+    { id: 12, name: 'Tropical Mega Battle', set: 'Promo', number: 'TM-01', psa10_now: 55000, psa10_prev: 42000, img: null },
+  ];
+  return cards.map(c => ({
+    ...c,
+    change_pct: ((c.psa10_now - c.psa10_prev) / c.psa10_prev * 100)
+  })).sort((a, b) => Math.abs(b.change_pct) - Math.abs(a.change_pct));
+}
+
+function getDemoSearch(query) {
+  const all = [
+    { id: 10, name: 'Charizard', set: 'Base Set', number: '4/102', psa10_now: 7800, psa10_prev: 7200, rarity: 'Holo Rare' },
+    { id: 11, name: 'Charizard V', set: 'Champion\'s Path', number: '79/73', psa10_now: 420, psa10_prev: 390, rarity: 'Full Art Rare' },
+    { id: 12, name: 'Charizard VMAX', set: 'Champion\'s Path', number: '74/73', psa10_now: 680, psa10_prev: 720, rarity: 'Secret Rare' },
+    { id: 13, name: 'Charizard EX', set: 'XY Flashfire', number: '11/106', psa10_now: 95, psa10_prev: 88, rarity: 'EX Rare' },
+    { id: 20, name: 'Pikachu', set: 'Base Set', number: '58/102', psa10_now: 280, psa10_prev: 260, rarity: 'Common' },
+    { id: 21, name: 'Pikachu VMAX', set: 'Vivid Voltage', number: '188/185', psa10_now: 320, psa10_prev: 290, rarity: 'Rainbow Rare' },
+    { id: 30, name: 'Mewtwo', set: 'Base Set', number: '10/102', psa10_now: 2100, psa10_prev: 1950, rarity: 'Holo Rare' },
+    { id: 31, name: 'Mewtwo EX', set: 'Next Destinies', number: '54/99', psa10_now: 180, psa10_prev: 165, rarity: 'EX Rare' },
+    { id: 40, name: 'Umbreon VMAX', set: 'Evolving Skies', number: '215/203', psa10_now: 550, psa10_prev: 490, rarity: 'Rainbow Rare' },
+    { id: 41, name: 'Sylveon VMAX', set: 'Evolving Skies', number: '212/203', psa10_now: 310, psa10_prev: 280, rarity: 'Rainbow Rare' },
+  ];
+  const q = query.toLowerCase();
+  return all
+    .filter(c => c.name.toLowerCase().includes(q) || c.set.toLowerCase().includes(q) || c.number.toLowerCase().includes(q))
+    .map(c => ({ ...c, change_pct: (c.psa10_now - c.psa10_prev) / c.psa10_prev * 100 }));
+}
+
+/* ===========================
+   LOAD MOVERS
+=========================== */
+async function loadMovers() {
+  const btn = document.getElementById('refreshBtn');
+  const icon = document.getElementById('refreshIcon');
+  btn.disabled = true;
+  icon.classList.add('spin');
+  document.getElementById('errorBanner').classList.remove('show');
+  document.getElementById('footerStatus').textContent = 'Loading data…';
+  showLoadingGrid('moversContainer');
+
+  try {
+    let movers;
+    if (IS_DEMO) {
+      await sleep(900);
+      movers = getDemoMovers();
+    } else {
+      // Step 1: discover working base URL
+      if (!WORKING_BASE) {
+        document.getElementById('footerStatus').textContent = 'Connecting to PokeData API…';
+        const found = await discoverBase();
+        if (!found) throw new Error('Could not reach pokedata.io API. Check your network or CORS settings. Try opening the app from a local file or a server.');
+        document.getElementById('footerStatus').textContent = `Connected via ${found.base} (HTTP ${found.status})…`;
+      }
+
+      // Step 2: try movers endpoints
+      let data, endpoint;
+      const moverEndpoints = [
+        '/cards/movers?grade=PSA10&period=24h&limit=50',
+        '/cards/movers?period=24h&limit=50',
+        '/market/movers?grade=PSA10&hours=24&limit=50',
+        '/price-movers?grade=psa_10&limit=50',
+        '/cards?sort=change_24h&limit=50',
+      ];
+
+      let lastErr;
+      for (const ep of moverEndpoints) {
+        try {
+          data = await apiGet(ep);
+          endpoint = ep;
+          break;
+        } catch(e) { lastErr = e; }
+      }
+
+      if (!data) throw new Error(`No movers endpoint responded. Last error: ${lastErr?.message}. Your key is valid — check the PokeData docs for the correct endpoint.`);
+
+      // Step 3: normalize — handle any response shape
+      const raw = data.cards || data.results || data.data || data.movers || (Array.isArray(data) ? data : []);
+      movers = raw.map(c => {
+        const prices = c.prices || c.price || {};
+        const psa10 = prices.psa_10 || prices.psa10 || c.psa_10 || c.psa10 || c.psa10_price || 0;
+        const psa10prev = prices.psa_10_prev || prices.psa10_prev || c.psa_10_prev || c.psa10_prev || c.psa10_price_24h || psa10;
+        return {
+          id: c.id || c.card_id,
+          name: c.name || c.card_name || 'Unknown',
+          set: c.set || c.set_name || c.set_id || '',
+          number: c.number || c.card_number || '',
+          rarity: c.rarity || '',
+          img: c.image || c.image_url || c.img || c.img_url || c.images?.small || null,
+          psa10_now: psa10,
+          psa10_prev: psa10prev,
+          change_pct: psa10prev > 0 ? (psa10 - psa10prev) / psa10prev * 100 : 0
+        };
+      }).sort((a, b) => Math.abs(b.change_pct) - Math.abs(a.change_pct));
+    }
+
+    allMovers = movers;
+    renderMovers();
+    const now = new Date();
+    document.getElementById('lastUpdated').textContent = 'Updated ' + now.toLocaleTimeString();
+    document.getElementById('footerStatus').textContent = `${movers.length} cards loaded · PSA 10 only`;
+  } catch (err) {
+    showError('errorBanner', `⚠️ ${err.message}`);
+    document.getElementById('moversContainer').innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><h3>Connection failed</h3><p>${err.message}</p><p style="margin-top:12px;font-size:12px;color:var(--muted)">Your JWT token is valid. The issue may be CORS (open this HTML file via a local web server, not file://) or the endpoint path. Check the browser Console (F12) for details.</p></div>`;
+    document.getElementById('footerStatus').textContent = 'Error — see details above';
+  }
+
+  btn.disabled = false;
+  icon.classList.remove('spin');
+}
+
+function filterMovers(type, el) {
+  currentFilter = type;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  renderMovers();
+}
+
+function renderMovers() {
+  let data = [...allMovers];
+  if (currentFilter === 'gainers') data = data.filter(c => c.change_pct > 0);
+  if (currentFilter === 'losers') data = data.filter(c => c.change_pct < 0).sort((a, b) => a.change_pct - b.change_pct);
+  
+  if (data.length === 0) {
+    document.getElementById('moversContainer').innerHTML = `<div class="empty-state"><div class="icon">📊</div><h3>No data</h3><p>No ${currentFilter} found for this period.</p></div>`;
+    return;
+  }
+  
+  document.getElementById('moversContainer').innerHTML = `<div class="cards-grid">${data.map((c, i) => cardHTML(c, i + 1)).join('')}</div>`;
+}
+
+/* ===========================
+   SEARCH
+=========================== */
+function onSearchInput() {
+  clearTimeout(searchDebounce);
+  const q = document.getElementById('searchInput').value.trim();
+  if (q.length < 2) {
+    document.getElementById('searchContainer').innerHTML = '';
+    document.getElementById('searchResultsInfo').textContent = '';
+    return;
+  }
+  searchDebounce = setTimeout(() => doSearch(q), 350);
+}
+
+async function doSearch(query) {
+  document.getElementById('searchErrorBanner').classList.remove('show');
+  showLoadingGrid('searchContainer', 4);
+  document.getElementById('searchResultsInfo').textContent = 'Searching…';
+
+  try {
+    let results;
+    if (IS_DEMO) {
+      await sleep(400);
+      results = getDemoSearch(query);
+    } else {
+      if (!WORKING_BASE) await discoverBase();
+
+      let data, lastErr;
+      const searchEndpoints = [
+        `/cards/search?q=${encodeURIComponent(query)}&limit=20`,
+        `/card/search?q=${encodeURIComponent(query)}&limit=20`,
+        `/cards?search=${encodeURIComponent(query)}&limit=20`,
+        `/cards?name=${encodeURIComponent(query)}&limit=20`,
+      ];
+      for (const ep of searchEndpoints) {
+        try { data = await apiGet(ep); break; } catch(e) { lastErr = e; }
+      }
+      if (!data) throw new Error(lastErr?.message || 'Search failed');
+
+      const raw = data.cards || data.results || data.data || (Array.isArray(data) ? data : []);
+      results = raw.map(c => {
+        const prices = c.prices || c.price || {};
+        const psa10 = prices.psa_10 || prices.psa10 || c.psa_10 || c.psa10 || c.psa10_price || 0;
+        const psa10prev = prices.psa_10_prev || c.psa_10_prev || psa10;
+        return {
+          id: c.id || c.card_id,
+          name: c.name || c.card_name || 'Unknown',
+          set: c.set || c.set_name || '',
+          number: c.number || c.card_number || '',
+          rarity: c.rarity || '',
+          img: c.image || c.image_url || c.img || c.images?.small || null,
+          psa10_now: psa10,
+          psa10_prev: psa10prev,
+          change_pct: psa10prev > 0 ? (psa10 - psa10prev) / psa10prev * 100 : 0
+        };
+      });
+    }
+
+    document.getElementById('searchResultsInfo').textContent = `${results.length} result${results.length !== 1 ? 's' : ''} for "${query}"`;
+    if (results.length === 0) {
+      document.getElementById('searchContainer').innerHTML = `<div class="empty-state"><div class="icon">🔎</div><h3>No results</h3><p>Try a different search term.</p></div>`;
+    } else {
+      document.getElementById('searchContainer').innerHTML = `<div class="cards-grid">${results.map((c) => cardHTML(c, null, true)).join('')}</div>`;
+    }
+  } catch (err) {
+    showError('searchErrorBanner', `Search failed: ${err.message}`);
+    document.getElementById('searchContainer').innerHTML = '';
+    document.getElementById('searchResultsInfo').textContent = '';
+  }
+}
+
+/* ===========================
+   CARD HTML
+=========================== */
+function cardHTML(card, rank, clickable = true) {
+  const up = card.change_pct >= 0;
+  const pct = Math.abs(card.change_pct).toFixed(1);
+  const now = formatPrice(card.psa10_now);
+  const prev = formatPrice(card.psa10_prev);
+  const rankBadge = rank ? `<div class="rank-badge">#${rank}</div>` : '';
+  const imgContent = card.img
+    ? `<img src="${card.img}" alt="${card.name}" loading="lazy" onerror="this.parentNode.innerHTML='🃏'">`
+    : '🃏';
+
+  // Sparkline bars (fake data for visual)
+  const bars = Array.from({length: 12}, (_, i) => {
+    const h = 20 + Math.random() * 80;
+    const isLast = i === 11;
+    return `<div class="bar-segment${isLast ? ' highlight' + (up ? '' : ' down') : ''}" style="height:${h}%"></div>`;
+  }).join('');
+
+  return `
+  <div class="card-item" onclick="openDetail(${JSON.stringify(card).replace(/"/g, '&quot;')})" style="animation-delay:${(rank||1)*0.04}s">
+    ${rankBadge}
+    <div class="card-header">
+      <div class="card-img-wrap">${imgContent}</div>
+      <div class="card-meta">
+        <div class="card-name">${escHtml(card.name)}</div>
+        <div class="card-set">${escHtml(card.set || '')}</div>
+        <div class="card-number">${escHtml(card.number || '')} ${card.rarity ? '· ' + escHtml(card.rarity) : ''}</div>
+        <div style="margin-top:6px"><span class="psa-badge">⭐ PSA 10</span></div>
+      </div>
+    </div>
+    <div class="card-prices">
+      <div>
+        <div class="price-now">${now}</div>
+        <div class="price-was">was ${prev}</div>
+      </div>
+      <div class="change-pill ${up ? 'up' : 'down'}">
+        ${up ? '▲' : '▼'} ${pct}%
+      </div>
+    </div>
+    <div class="sparkline-bar">${bars}</div>
+  </div>`;
+}
+
+/* ===========================
+   DETAIL PANEL
+=========================== */
+function openDetail(card) {
+  const up = card.change_pct >= 0;
+  const pct = Math.abs(card.change_pct).toFixed(2);
+  const diff = card.psa10_now - card.psa10_prev;
+  const imgContent = card.img
+    ? `<img src="${card.img}" alt="${card.name}" loading="lazy" onerror="this.innerHTML='🃏'">`
+    : '🃏';
+
+  document.getElementById('detailContent').innerHTML = `
+    <div class="detail-header">
+      <div class="detail-img">${imgContent}</div>
+      <div class="detail-meta">
+        <div class="detail-name">${escHtml(card.name)}</div>
+        <div class="detail-set">${escHtml(card.set || '')} · ${escHtml(card.number || '')}</div>
+        <div class="detail-tags">
+          <span class="psa-badge">⭐ PSA 10</span>
+          ${card.rarity ? `<span class="tag">${escHtml(card.rarity)}</span>` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-box">
+        <div class="stat-label">Current Price</div>
+        <div class="stat-val">${formatPrice(card.psa10_now)}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">24h Ago</div>
+        <div class="stat-val">${formatPrice(card.psa10_prev)}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">24h Change</div>
+        <div class="stat-val" style="color:${up ? 'var(--green)' : 'var(--red)'}">${up ? '+' : ''}${formatPrice(diff)}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">% Change</div>
+        <div class="stat-val" style="color:${up ? 'var(--green)' : 'var(--red)'}">${up ? '+' : '-'}${pct}%</div>
+      </div>
+    </div>
+  `;
+
+  const panel = document.getElementById('detailPanel');
+  panel.classList.add('open');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('open');
+}
+
+/* ===========================
+   LOADING SKELETONS
+=========================== */
+function showLoadingGrid(containerId, count = 6) {
+  const skeletons = Array.from({length: count}, () => `
+    <div class="skeleton-card">
+      <div class="card-header">
+        <div class="skel" style="width:54px;height:75px;border-radius:6px;flex-shrink:0"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:8px;padding-top:4px">
+          <div class="skel" style="height:14px;width:70%"></div>
+          <div class="skel" style="height:11px;width:50%"></div>
+          <div class="skel" style="height:11px;width:30%"></div>
+        </div>
+      </div>
+      <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;padding-top:14px;border-top:1px solid var(--border)">
+        <div class="skel" style="height:22px;width:80px"></div>
+        <div class="skel" style="height:30px;width:70px;border-radius:8px"></div>
+      </div>
+    </div>
+  `).join('');
+  document.getElementById(containerId).innerHTML = `<div class="loading-grid">${skeletons}</div>`;
+}
+
+/* ===========================
+   UTILS
+=========================== */
+function formatPrice(n) {
+  if (!n && n !== 0) return '$—';
+  if (n >= 1000000) return '$' + (n / 1000000).toFixed(2) + 'M';
+  if (n >= 1000) return '$' + n.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+  return '$' + n.toFixed(2);
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+/* ===========================
+   INIT
+=========================== */
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('pd_key');
+  if (saved) {
+    API_KEY = saved;
+    document.getElementById('apiKeyInput').value = saved;
+    document.getElementById('apiModal').classList.add('hidden');
+    setConnected(true);
+    loadMovers();
+  }
+});
+</script>
+</body>
+</html>
